@@ -48,7 +48,7 @@
             {
                 "command": "fileMerger.generateMergeFromSaved",
                 "title": "Generate Merge",
-                "icon": "$(file)"
+                "icon": "$(git-merge)"
             },
             {
                 "command": "fileMerger.refresh",
@@ -70,11 +70,6 @@
                 "title": "Toggle Selection"
             },
             {
-                "command": "fileMerger.useSelection",
-                "title": "Use Selection",
-                "icon": "$(play)"
-            },
-            {
                 "command": "fileMerger.editSelection",
                 "title": "Edit Selection",
                 "icon": "$(edit)"
@@ -87,14 +82,14 @@
             {
                 "command": "fileMerger.toggleActive",
                 "title": "Toggle Active State",
-                "icon": "$(eye)"
+                "icon": "$(play)"
             }
         ],
         "menus": {
             "view/title": [
                 {
                     "command": "fileMerger.refresh",
-                    "when": "view == newSelection",
+                    "when": "view == savedSelections",
                     "group": "navigation"
                 },
                 {
@@ -131,12 +126,12 @@
                 },
                 {
                     "command": "fileMerger.toggleActive",
-                    "when": "view == savedSelections",
+                    "when": "view == savedSelections && viewItem == savedSelection",
                     "group": "inline"
                 },
                 {
                     "command": "fileMerger.generateMergeFromSaved",
-                    "when": "view == savedSelections",
+                    "when": "view == savedSelections && viewItem == savedSelection",
                     "group": "inline"
                 }
             ]

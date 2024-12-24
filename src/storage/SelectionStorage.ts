@@ -18,7 +18,7 @@ class SelectionFileItem extends vscode.TreeItem {
 }
 
 // Nueva clase para representar las selecciones en el árbol
-class SelectionItem extends vscode.TreeItem {
+export class SelectionItem extends vscode.TreeItem {
     constructor(
         public readonly selection: StoredSelection
     ) {
@@ -38,8 +38,11 @@ class SelectionItem extends vscode.TreeItem {
 export class SelectionStorage {
     private _onDidChangeSelections = new vscode.EventEmitter<void>();
     readonly onDidChangeSelections = this._onDidChangeSelections.event;
+    private treeDataProvider: vscode.TreeDataProvider<SelectionItem | SelectionFileItem> | undefined;
 
-    constructor(private context: vscode.ExtensionContext) { }
+    constructor(private context: vscode.ExtensionContext) {
+        this.treeDataProvider = this.getSavedSelectionsProvider();
+    }
 
     saveSelection(name: string, files: string[]): void {
         const selections = this.getAllSelections();
@@ -49,6 +52,27 @@ export class SelectionStorage {
             isActive: false
         });
         this.context.globalState.update('selections', selections);
+        this._onDidChangeSelections.fire();
+    }
+
+    getSavedSelectionsProvider(): vscode.TreeDataProvider<SelectionItem | SelectionFileItem> {
+        return {
+            getTreeItem: (element: SelectionItem | SelectionFileItem) => element,
+            onDidChangeTreeData: this._onDidChangeSelections.event,
+
+            getChildren: (element?: SelectionItem): (SelectionItem | SelectionFileItem)[] => {
+                if (!element) {
+                    return this.getAllSelections().map(selection =>
+                        new SelectionItem(selection)
+                    );
+                }
+                return element.selection.files.map(file =>
+                    new SelectionFileItem(file)
+                );
+            }
+        };
+    }
+    refresh(): void {
         this._onDidChangeSelections.fire();
     }
 
@@ -87,39 +111,7 @@ export class SelectionStorage {
         this._onDidChangeSelections.fire();
     }
 
-    getSavedSelectionsProvider(): vscode.TreeDataProvider<SelectionItem | SelectionFileItem> {
-        return {
-            getTreeItem: (element: SelectionItem | SelectionFileItem) => element,
 
-            getChildren: (element?: SelectionItem): (SelectionItem | SelectionFileItem)[] => {
-                if (!element) {
-                    // Nivel raíz: mostrar todas las selecciones
-                    return this.getAllSelections().map(selection =>
-                        new SelectionItem(selection)
-                    );
-                } else {
-                    // Nivel hijo: mostrar los archivos de la selección
-                    return element.selection.files.map(file =>
-                        new SelectionFileItem(file)
-                    );
-                }
-            },
-
-            getParent: (element: SelectionItem | SelectionFileItem) => {
-                if (element instanceof SelectionFileItem) {
-                    // Buscar la selección padre
-                    const selections = this.getAllSelections();
-                    const parentSelection = selections.find(s =>
-                        s.files.includes(element.filePath)
-                    );
-                    return parentSelection ?
-                        new SelectionItem(parentSelection) :
-                        null;
-                }
-                return null;
-            }
-        };
-    }
 
     getActiveSelectionsProvider(): vscode.TreeDataProvider<vscode.TreeItem> {
         return {

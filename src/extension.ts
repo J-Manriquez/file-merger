@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { FileExplorerProvider, FileTreeItem } from './providers/FileExplorerProvider';
-import { SelectionStorage, StoredSelection } from './storage/SelectionStorage';
+import { SelectionStorage, StoredSelection, SelectionItem } from './storage/SelectionStorage';
 import { FileManager } from './managers/FileManager';
 
 export function activate(context: vscode.ExtensionContext) {
@@ -16,10 +16,8 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     // Registrar el proveedor para selecciones guardadas
-    vscode.window.registerTreeDataProvider(
-        'savedSelections',
-        storage.getSavedSelectionsProvider()
-    );
+    const savedSelectionsProvider = storage.getSavedSelectionsProvider();
+    vscode.window.registerTreeDataProvider('savedSelections', savedSelectionsProvider);
 
     // Registrar el proveedor para selecciones activas
     vscode.window.registerTreeDataProvider(
@@ -31,6 +29,8 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('fileMerger.refresh', () => {
             fileExplorerProvider.refresh();
+            // Forzar actualización de la vista de selecciones guardadas
+            storage.refresh();
         }),
 
         vscode.commands.registerCommand('fileMerger.toggleSelection', async (item: FileTreeItem) => {
@@ -61,64 +61,25 @@ export function activate(context: vscode.ExtensionContext) {
             }
         }),
 
-        vscode.commands.registerCommand('fileMerger.useSelection', (selection: StoredSelection) => {
-            fileManager.mergeFiles(selection.files);
-        }),
-
-        vscode.commands.registerCommand('fileMerger.editSelection', async (selection: StoredSelection) => {
-            // Crear una nueva vista temporal para selección
-            const tempProvider = new FileExplorerProvider();
-            const tempTreeView = vscode.window.createTreeView('tempSelection', {
-                treeDataProvider: tempProvider,
-                showCollapseAll: true,
-                canSelectMany: true
-            });
-
-            // Pre-seleccionar los archivos existentes
-            selection.files.forEach(file => {
-                tempProvider.toggleSelection(new FileTreeItem(
-                    vscode.Uri.file(file),
-                    vscode.FileType.File,
-                    true
-                ));
-            });
-
-            // Mostrar diálogo de confirmación
-            const result = await vscode.window.showInformationMessage(
-                'Select files and click Save when done',
-                'Save',
-                'Cancel'
-            );
-
-            if (result === 'Save') {
-                const newFiles = tempProvider.getSelectedFiles();
-                storage.updateSelection(selection.name, newFiles);
-                vscode.window.showInformationMessage(`Selection "${selection.name}" updated`);
-            }
-
-            tempTreeView.dispose();
-        }),
-
-        vscode.commands.registerCommand('fileMerger.generateMergeFromSaved', (selection: StoredSelection) => {
-            if (selection.files.length > 0) {
-                fileManager.mergeFiles(selection.files);
+        vscode.commands.registerCommand('fileMerger.generateMergeFromSaved', (item: SelectionItem) => {
+            if (item && item.selection && item.selection.files.length > 0) {
+                fileManager.mergeFiles(item.selection.files);
             } else {
                 vscode.window.showWarningMessage('No files in this selection');
             }
         }),
 
-        vscode.commands.registerCommand('fileMerger.deleteSelection', (selection: StoredSelection) => {
-            storage.deleteSelection(selection.name);
-            vscode.window.showInformationMessage(`Selection "${selection.name}" deleted`);
-        }),
-
-        vscode.commands.registerCommand('fileMerger.toggleActive', (selection: StoredSelection) => {
-            storage.toggleSelectionActive(selection.name);
-            if (selection.isActive) {
-                const outputPath = selection.name + '_merged.txt';
-                fileManager.startWatching(selection.files, outputPath);
-            } else {
-                fileManager.stopWatching(selection.files);
+        vscode.commands.registerCommand('fileMerger.toggleActive', (item: SelectionItem) => {
+            if (item && item.selection) {
+                storage.toggleSelectionActive(item.selection.name);
+                if (item.selection.isActive) {
+                    const outputPath = item.selection.name + '_merged.txt';
+                    fileManager.startWatching(item.selection.files, outputPath);
+                    vscode.window.showInformationMessage(`Selection "${item.selection.name}" is now active`);
+                } else {
+                    fileManager.stopWatching(item.selection.files);
+                    vscode.window.showInformationMessage(`Selection "${item.selection.name}" is now inactive`);
+                }
             }
         })
     );
@@ -128,6 +89,11 @@ export function activate(context: vscode.ExtensionContext) {
         for (const [item] of e.items) {
             await fileExplorerProvider.toggleSelection(item as FileTreeItem);
         }
+    });
+
+    // Suscribirse a cambios en las selecciones
+    storage.onDidChangeSelections(() => {
+        vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
     });
 }
 
