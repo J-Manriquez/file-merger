@@ -81,13 +81,22 @@ export class FileExplorerProvider implements vscode.TreeDataProvider<FileTreeIte
 
             if (this.selectedItems.has(fileItem.uri.fsPath)) {
                 this.selectedItems.delete(fileItem.uri.fsPath);
+                fileItem.checkboxState = vscode.TreeItemCheckboxState.Unchecked;
             } else {
                 this.selectedItems.add(fileItem.uri.fsPath);
+                fileItem.checkboxState = vscode.TreeItemCheckboxState.Checked;
             }
         };
 
         await toggleItem(item);
         this._onDidChangeTreeData.fire();
+    }
+
+    // Añade este método para limpiar todas las selecciones
+    clearSelections(): void {
+        this.selectedItems.clear();
+        this._onDidChangeTreeData.fire();
+
     }
 
     getSelectedFiles(): string[] {

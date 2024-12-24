@@ -93,6 +93,16 @@
                     "group": "navigation"
                 },
                 {
+                    "command": "fileMerger.refresh",
+                    "when": "view == newSelection",
+                    "group": "navigation"
+                },
+                {
+                    "command": "fileMerger.refresh",
+                    "when": "view == activeSelections",
+                    "group": "navigation"
+                },
+                {
                     "command": "fileMerger.saveSelection",
                     "when": "view == newSelection",
                     "group": "navigation"

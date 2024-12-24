@@ -69,6 +69,47 @@ export function activate(context: vscode.ExtensionContext) {
             }
         }),
 
+        vscode.commands.registerCommand('fileMerger.deleteSelection', async (item: SelectionItem) => {
+            if (item && item.selection) {
+                const answer = await vscode.window.showWarningMessage(
+                    `Are you sure you want to delete "${item.selection.name}"?`,
+                    'Yes',
+                    'No'
+                );
+                if (answer === 'Yes') {
+                    storage.deleteSelection(item.selection.name);
+                    vscode.window.showInformationMessage(`Selection "${item.selection.name}" deleted`);
+                }
+            }
+        }),
+
+        vscode.commands.registerCommand('fileMerger.editSelection', async (item: SelectionItem) => {
+            if (item && item.selection) {
+                // Limpiar selección actual
+                fileExplorerProvider.refresh();
+
+                // Pre-seleccionar los archivos de la selección guardada
+                for (const file of item.selection.files) {
+                    const uri = vscode.Uri.file(file);
+                    const fileItem = new FileTreeItem(
+                        uri,
+                        vscode.FileType.File,
+                        true
+                    );
+                    await fileExplorerProvider.toggleSelection(fileItem);
+                }
+
+                // Cambiar a la vista de nueva selección
+                await vscode.commands.executeCommand('workbench.view.extension.file-merger-explorer');
+                await vscode.commands.executeCommand('newSelection.focus');
+
+                // Mostrar mensaje informativo
+                vscode.window.showInformationMessage(
+                    `Editing "${item.selection.name}". Make your changes and save as a new selection.`
+                );
+            }
+        }),
+
         vscode.commands.registerCommand('fileMerger.toggleActive', (item: SelectionItem) => {
             if (item && item.selection) {
                 storage.toggleSelectionActive(item.selection.name);
@@ -93,7 +134,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Suscribirse a cambios en las selecciones
     storage.onDidChangeSelections(() => {
-        vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
+        // vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
     });
 }
 
