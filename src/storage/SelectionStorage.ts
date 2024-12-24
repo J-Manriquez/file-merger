@@ -1,5 +1,6 @@
 import path = require('path');
 import * as vscode from 'vscode';
+import { FileManager } from '../managers/FileManager';
 
 export interface StoredSelection {
     name: string;
@@ -7,7 +8,7 @@ export interface StoredSelection {
     isActive: boolean;
 }
 
-// Nueva clase para representar los archivos en el árbol
+// Clase para representar los archivos en el árbol
 class SelectionFileItem extends vscode.TreeItem {
     constructor(public readonly filePath: string) {
         super(path.basename(filePath));
@@ -17,10 +18,11 @@ class SelectionFileItem extends vscode.TreeItem {
     }
 }
 
-// Nueva clase para representar las selecciones en el árbol
+// Clase para representar las selecciones en el árbol
 export class SelectionItem extends vscode.TreeItem {
     constructor(
-        public readonly selection: StoredSelection
+        public readonly selection: StoredSelection,
+        private fileManager: FileManager // Añadir FileManager como dependencia
     ) {
         super(
             selection.name,
@@ -32,6 +34,13 @@ export class SelectionItem extends vscode.TreeItem {
         this.iconPath = selection.isActive ?
             new vscode.ThemeIcon('eye') :
             new vscode.ThemeIcon('eye-closed');
+
+        // Añadir comando para abrir el archivo merge
+        this.command = {
+            command: 'fileMerger.openMergedFile',
+            title: 'Open Merged File',
+            arguments: [this]
+        };
     }
 }
 
@@ -40,10 +49,12 @@ export class SelectionStorage {
     readonly onDidChangeSelections = this._onDidChangeSelections.event;
     private treeDataProvider: vscode.TreeDataProvider<SelectionItem | SelectionFileItem> | undefined;
 
-    constructor(private context: vscode.ExtensionContext) {
+    constructor(
+        private context: vscode.ExtensionContext,
+        private fileManager: FileManager
+    ) {
         this.treeDataProvider = this.getSavedSelectionsProvider();
     }
-
     saveSelection(name: string, files: string[]): void {
         const selections = this.getAllSelections();
         selections.push({
@@ -55,6 +66,7 @@ export class SelectionStorage {
         this._onDidChangeSelections.fire();
     }
 
+
     getSavedSelectionsProvider(): vscode.TreeDataProvider<SelectionItem | SelectionFileItem> {
         return {
             getTreeItem: (element: SelectionItem | SelectionFileItem) => element,
@@ -63,7 +75,7 @@ export class SelectionStorage {
             getChildren: (element?: SelectionItem): (SelectionItem | SelectionFileItem)[] => {
                 if (!element) {
                     return this.getAllSelections().map(selection =>
-                        new SelectionItem(selection)
+                        new SelectionItem(selection, this.fileManager)
                     );
                 }
                 return element.selection.files.map(file =>
@@ -72,6 +84,8 @@ export class SelectionStorage {
             }
         };
     }
+
+
     refresh(): void {
         this._onDidChangeSelections.fire();
     }
@@ -94,12 +108,22 @@ export class SelectionStorage {
         return this.getAllSelections().filter(s => s.isActive);
     }
 
-    toggleSelectionActive(name: string): void {
+
+    async toggleSelectionActive(name: string): Promise<void> {
         const selections = this.getAllSelections();
         const selection = selections.find(s => s.name === name);
         if (selection) {
             selection.isActive = !selection.isActive;
-            this.context.globalState.update('selections', selections);
+            await this.context.globalState.update('selections', selections);
+
+            if (selection.isActive) {
+                await this.fileManager.startWatching(selection.name, selection.files);
+                vscode.window.showInformationMessage(`Selection "${selection.name}" is now active`);
+            } else {
+                this.fileManager.stopWatching(selection.name);
+                vscode.window.showInformationMessage(`Selection "${selection.name}" is now inactive`);
+            }
+
             this._onDidChangeSelections.fire();
         }
     }

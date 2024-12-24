@@ -2,10 +2,13 @@ import * as vscode from 'vscode';
 import { FileExplorerProvider, FileTreeItem } from './providers/FileExplorerProvider';
 import { SelectionStorage, StoredSelection, SelectionItem } from './storage/SelectionStorage';
 import { FileManager } from './managers/FileManager';
+import path = require('path');
+import * as fs from 'fs';
+
 
 export function activate(context: vscode.ExtensionContext) {
-    const storage = new SelectionStorage(context);
     const fileManager = new FileManager();
+    const storage = new SelectionStorage(context, fileManager);
     const fileExplorerProvider = new FileExplorerProvider();
 
     // Registrar proveedores de vista
@@ -18,12 +21,6 @@ export function activate(context: vscode.ExtensionContext) {
     // Registrar el proveedor para selecciones guardadas
     const savedSelectionsProvider = storage.getSavedSelectionsProvider();
     vscode.window.registerTreeDataProvider('savedSelections', savedSelectionsProvider);
-
-    // Registrar el proveedor para selecciones activas
-    vscode.window.registerTreeDataProvider(
-        'activeSelections',
-        storage.getActiveSelectionsProvider()
-    );
 
     // Registrar comandos
     context.subscriptions.push(
@@ -58,6 +55,21 @@ export function activate(context: vscode.ExtensionContext) {
                 fileManager.mergeFiles(selectedFiles);
             } else {
                 vscode.window.showWarningMessage('No files selected to merge');
+            }
+        }),
+
+        vscode.commands.registerCommand('fileMerger.openMergedFile', (item: SelectionItem) => {
+            if (item && item.selection) {
+                const mergedFilePath = fileManager.getMergedFilePath(item.selection.name);
+                if (mergedFilePath && fs.existsSync(mergedFilePath)) {
+                    vscode.workspace.openTextDocument(mergedFilePath)
+                        .then(doc => vscode.window.showTextDocument(doc))
+                        .then(undefined, error => { // Corregir el manejo de errores
+                            vscode.window.showErrorMessage(`Error opening merged file: ${error}`);
+                        });
+                } else {
+                    vscode.window.showWarningMessage('Merged file not found. Try activating the selection first.');
+                }
             }
         }),
 
@@ -113,17 +125,13 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('fileMerger.toggleActive', (item: SelectionItem) => {
             if (item && item.selection) {
                 storage.toggleSelectionActive(item.selection.name);
-                if (item.selection.isActive) {
-                    const outputPath = item.selection.name + '_merged.txt';
-                    fileManager.startWatching(item.selection.files, outputPath);
-                    vscode.window.showInformationMessage(`Selection "${item.selection.name}" is now active`);
-                } else {
-                    fileManager.stopWatching(item.selection.files);
-                    vscode.window.showInformationMessage(`Selection "${item.selection.name}" is now inactive`);
+                if (!item.selection.isActive) {
+                    fileManager.stopWatching(item.selection.name); // Usar el nombre en lugar del array
                 }
             }
         })
     );
+
 
     // Manejar eventos de checkbox
     treeView.onDidChangeCheckboxState(async (e) => {

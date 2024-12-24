@@ -36,11 +36,6 @@
                     "id": "savedSelections",
                     "name": "Saved Selections",
                     "contextualTitle": "Saved Selections"
-                },
-                {
-                    "id": "activeSelections",
-                    "name": "Active Selections",
-                    "contextualTitle": "Active Selections"
                 }
             ]
         },
@@ -49,6 +44,11 @@
                 "command": "fileMerger.generateMergeFromSaved",
                 "title": "Generate Merge",
                 "icon": "$(git-merge)"
+            },
+            {
+                "command": "fileMerger.openMergedFile",
+                "title": "Open Merged File",
+                "icon": "$(go-to-file)"
             },
             {
                 "command": "fileMerger.refresh",
@@ -82,7 +82,7 @@
             {
                 "command": "fileMerger.toggleActive",
                 "title": "Toggle Active State",
-                "icon": "$(play)"
+                "icon": "$(sync)"
             }
         ],
         "menus": {
@@ -120,6 +120,11 @@
                     "group": "inline"
                 },
                 {
+                    "command": "fileMerger.openMergedFile",
+                    "when": "view == savedSelections && viewItem == savedSelection",
+                    "group": "inline@4"
+                },
+                {
                     "command": "fileMerger.useSelection",
                     "when": "view == savedSelections",
                     "group": "inline"
@@ -141,6 +146,11 @@
                 },
                 {
                     "command": "fileMerger.generateMergeFromSaved",
+                    "when": "view == savedSelections && viewItem == savedSelection",
+                    "group": "inline"
+                },
+                {
+                    "command": "fileMerger.openMergedFile",
                     "when": "view == savedSelections && viewItem == savedSelection",
                     "group": "inline"
                 }
