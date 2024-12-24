@@ -1,0 +1,827 @@
+Ruta al script: src\managers\FileManager.ts
+Nombre del script: FileManager.ts
+Contenido del script:
+import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
+
+export class FileManager {
+    private fileWatchers: Map<string, fs.FSWatcher> = new Map();
+
+    async mergeFiles(files: string[]): Promise<void> {
+        try {
+            // Filtrar solo archivos (no directorios)
+            const fileStats = await Promise.all(
+                files.map(async file => ({
+                    path: file,
+                    isDirectory: (await fs.promises.stat(file)).isDirectory()
+                }))
+            );
+            const validFiles = fileStats
+                .filter(stat => !stat.isDirectory)
+                .map(stat => stat.path);
+
+            if (validFiles.length === 0) {
+                vscode.window.showWarningMessage('No valid files selected for merging');
+                return;
+            }
+
+            const mergedContent = await this.generateMergedContent(validFiles);
+            const outputPath = this.getOutputPath();
+
+            await fs.promises.writeFile(outputPath, mergedContent, 'utf8');
+            this.startWatching(validFiles, outputPath);
+
+            vscode.window.showInformationMessage('Files merged successfully!');
+
+            // Abrir el archivo fusionado
+            const document = await vscode.workspace.openTextDocument(outputPath);
+            await vscode.window.showTextDocument(document);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Error merging files: ${errorMessage}`);
+        }
+    }
+
+    startWatching(files: string[], outputPath: string): void {
+        // Limpiar watchers anteriores
+        this.stopAllWatchers();
+
+        // Crear nuevos watchers
+        files.forEach(file => {
+            const watcher = fs.watch(file, async () => {
+                try {
+                    const mergedContent = await this.generateMergedContent(files);
+                    await fs.promises.writeFile(outputPath, mergedContent, 'utf8');
+                    vscode.window.showInformationMessage('Merged file updated');
+                } catch (error) {
+                    vscode.window.showErrorMessage(`Error updating merged file: ${error}`);
+                }
+            });
+            this.fileWatchers.set(file, watcher);
+        });
+    }
+
+    private getOutputPath(): string {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders) {
+            throw new Error('No workspace folder open');
+        }
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        return path.join(workspaceFolders[0].uri.fsPath, `merged_script_${timestamp}.txt`);
+    }
+
+    private async generateMergedContent(files: string[]): Promise<string> {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders) {
+            throw new Error('No workspace folder open');
+        }
+        const workspacePath = workspaceFolders[0].uri.fsPath;
+
+        let content = '';
+        for (const file of files) {
+            const fileContent = await fs.promises.readFile(file, 'utf8');
+            // Convertir a ruta relativa
+            const relativePath = path.relative(workspacePath, file);
+            content += `Ruta al script: ${relativePath}\n`;
+            content += `Nombre del script: ${path.basename(file)}\n`;
+            content += `Contenido del script:\n${fileContent}\n`;
+            content += '\n--------------------------------------------------\n\n';
+        }
+        return content;
+    }
+
+    private stopAllWatchers(): void {
+        this.fileWatchers.forEach(watcher => watcher.close());
+        this.fileWatchers.clear();
+    }
+
+    stopWatching(files: string[]): void {
+        files.forEach(file => {
+            const watcher = this.fileWatchers.get(file);
+            if (watcher) {
+                watcher.close();
+                this.fileWatchers.delete(file);
+            }
+        });
+    }
+}
+
+--------------------------------------------------
+
+Ruta al script: src\providers\FileExplorerProvider.ts
+Nombre del script: FileExplorerProvider.ts
+Contenido del script:
+import * as vscode from 'vscode';
+import * as path from 'path';
+
+export class FileTreeItem extends vscode.TreeItem {
+    constructor(
+        public readonly uri: vscode.Uri,
+        public readonly type: vscode.FileType,
+        public isSelected: boolean = false
+    ) {
+        super(
+            path.basename(uri.fsPath),
+            type === vscode.FileType.Directory
+                ? vscode.TreeItemCollapsibleState.Collapsed
+                : vscode.TreeItemCollapsibleState.None
+        );
+
+        this.tooltip = this.uri.fsPath;
+        this.contextValue = type === vscode.FileType.Directory ? 'directory' : 'file';
+
+        // Configurar checkbox
+        this.checkboxState = isSelected ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked;
+
+        // Configurar ícono
+        this.iconPath = type === vscode.FileType.Directory
+            ? new vscode.ThemeIcon('folder')
+            : new vscode.ThemeIcon('file');
+    }
+}
+
+export class FileExplorerProvider implements vscode.TreeDataProvider<FileTreeItem> {
+    private _onDidChangeTreeData = new vscode.EventEmitter<FileTreeItem | undefined | void>();
+    readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+    private selectedItems = new Set<string>();
+
+    constructor() { }
+
+    getTreeItem(element: FileTreeItem): vscode.TreeItem {
+        return element;
+    }
+
+    async getChildren(element?: FileTreeItem): Promise<FileTreeItem[]> {
+        try {
+            let uri: vscode.Uri;
+            if (!element) {
+                const workspaceFolders = vscode.workspace.workspaceFolders;
+                if (!workspaceFolders) {
+                    return [];
+                }
+                uri = workspaceFolders[0].uri;
+            } else {
+                uri = element.uri;
+            }
+
+            const entries = await vscode.workspace.fs.readDirectory(uri);
+            return entries
+                .map(([name, type]) => {
+                    const entryUri = vscode.Uri.joinPath(uri, name);
+                    const isSelected = this.selectedItems.has(entryUri.fsPath);
+                    return new FileTreeItem(entryUri, type, isSelected);
+                })
+                .sort((a, b) => {
+                    if (a.contextValue === b.contextValue) {
+                        return a.label!.toString().localeCompare(b.label!.toString());
+                    }
+                    return a.contextValue === 'directory' ? -1 : 1;
+                });
+        } catch (error) {
+            console.error('Error reading directory:', error);
+            return [];
+        }
+    }
+
+    async toggleSelection(item: FileTreeItem): Promise<void> {
+        const toggleItem = async (fileItem: FileTreeItem) => {
+            if (fileItem.type === vscode.FileType.Directory) {
+                const children = await this.getChildren(fileItem);
+                for (const child of children) {
+                    await toggleItem(child);
+                }
+            }
+
+            if (this.selectedItems.has(fileItem.uri.fsPath)) {
+                this.selectedItems.delete(fileItem.uri.fsPath);
+                fileItem.checkboxState = vscode.TreeItemCheckboxState.Unchecked;
+            } else {
+                this.selectedItems.add(fileItem.uri.fsPath);
+                fileItem.checkboxState = vscode.TreeItemCheckboxState.Checked;
+            }
+        };
+
+        await toggleItem(item);
+        this._onDidChangeTreeData.fire();
+    }
+
+    // Añade este método para limpiar todas las selecciones
+    clearSelections(): void {
+        this.selectedItems.clear();
+        this._onDidChangeTreeData.fire();
+
+    }
+
+    getSelectedFiles(): string[] {
+        return Array.from(this.selectedItems);
+    }
+
+    refresh(): void {
+        this._onDidChangeTreeData.fire();
+    }
+}
+
+--------------------------------------------------
+
+Ruta al script: src\providers\SelectionEventHandler.ts
+Nombre del script: SelectionEventHandler.ts
+Contenido del script:
+// src/providers/SelectionEventHandler.ts
+import * as vscode from 'vscode';
+
+export class SelectionEventHandler {
+    private static instance: SelectionEventHandler;
+    private _onDidChangeSelection = new vscode.EventEmitter<void>();
+    readonly onDidChangeSelection = this._onDidChangeSelection.event;
+
+    private constructor() { }
+
+    static getInstance(): SelectionEventHandler {
+        if (!SelectionEventHandler.instance) {
+            SelectionEventHandler.instance = new SelectionEventHandler();
+        }
+        return SelectionEventHandler.instance;
+    }
+
+    notifySelectionChanged(): void {
+        this._onDidChangeSelection.fire();
+    }
+}
+
+--------------------------------------------------
+
+Ruta al script: src\providers\SelectionProvider.ts
+Nombre del script: SelectionProvider.ts
+Contenido del script:
+// src/providers/SelectionProvider.ts
+import * as vscode from 'vscode';
+import { SelectionStorage } from '../storage/SelectionStorage';
+import { FileManager } from '../managers/FileManager';
+
+export class SelectionProvider {
+    private currentSelection: string[] = [];
+
+    constructor(
+        private storage: SelectionStorage,
+        private fileManager: FileManager
+    ) { }
+
+    // Añadir el método que faltaba
+    async saveCurrentSelection(name: string): Promise<void> {
+        if (this.currentSelection.length > 0) {
+            this.storage.saveSelection(name, this.currentSelection);
+            vscode.window.showInformationMessage(`Selection "${name}" saved successfully`);
+        } else {
+            vscode.window.showWarningMessage('No files selected to save');
+        }
+    }
+
+    getSavedSelectionsProvider(): vscode.TreeDataProvider<vscode.TreeItem> {
+        return {
+            getTreeItem: (element) => element,
+            getChildren: () => {
+                return this.storage.getAllSelections().map(selection => {
+                    const item = new vscode.TreeItem(selection.name);
+                    item.contextValue = 'savedSelection';
+                    item.command = {
+                        command: 'fileMerger.useSelection',
+                        title: 'Use Selection',
+                        arguments: [selection]
+                    };
+                    return item;
+                });
+            }
+        };
+    }
+
+    getActiveSelectionsProvider(): vscode.TreeDataProvider<vscode.TreeItem> {
+        return {
+            getTreeItem: (element) => element,
+            getChildren: () => {
+                return this.storage.getActiveSelections().map(selection => {
+                    const item = new vscode.TreeItem(selection.name);
+                    item.contextValue = 'activeSelection';
+                    return item;
+                });
+            }
+        };
+    }
+
+    updateCurrentSelection(files: string[]): void {
+        this.currentSelection = files;
+    }
+
+    async createNewSelection(): Promise<void> {
+        const files = await vscode.window.showOpenDialog({
+            canSelectMany: true,
+            canSelectFolders: true
+        });
+
+        if (files) {
+            const expandedFiles = await this.expandFolders(files.map(f => f.fsPath));
+            await this.fileManager.mergeFiles(expandedFiles);
+        }
+    }
+
+
+    private async expandFolders(paths: string[]): Promise<string[]> {
+        const expandedFiles: string[] = [];
+
+        for (const path of paths) {
+            const stat = await vscode.workspace.fs.stat(vscode.Uri.file(path));
+            if (stat.type === vscode.FileType.Directory) {
+                const files = await vscode.workspace.findFiles(
+                    new vscode.RelativePattern(path, '**/*')
+                );
+                expandedFiles.push(...files.map(f => f.fsPath));
+            } else {
+                expandedFiles.push(path);
+            }
+        }
+
+        return expandedFiles;
+    }
+
+}
+
+--------------------------------------------------
+
+Ruta al script: src\storage\SelectionStorage.ts
+Nombre del script: SelectionStorage.ts
+Contenido del script:
+import path = require('path');
+import * as vscode from 'vscode';
+
+export interface StoredSelection {
+    name: string;
+    files: string[];
+    isActive: boolean;
+}
+
+// Nueva clase para representar los archivos en el árbol
+class SelectionFileItem extends vscode.TreeItem {
+    constructor(public readonly filePath: string) {
+        super(path.basename(filePath));
+        this.tooltip = filePath;
+        this.contextValue = 'selectionFile';
+        this.iconPath = new vscode.ThemeIcon('file');
+    }
+}
+
+// Nueva clase para representar las selecciones en el árbol
+export class SelectionItem extends vscode.TreeItem {
+    constructor(
+        public readonly selection: StoredSelection
+    ) {
+        super(
+            selection.name,
+            vscode.TreeItemCollapsibleState.Collapsed
+        );
+        this.contextValue = 'savedSelection';
+        this.tooltip = `Files: ${selection.files.length}`;
+        this.description = selection.isActive ? '(Active)' : '';
+        this.iconPath = selection.isActive ?
+            new vscode.ThemeIcon('eye') :
+            new vscode.ThemeIcon('eye-closed');
+    }
+}
+
+export class SelectionStorage {
+    private _onDidChangeSelections = new vscode.EventEmitter<void>();
+    readonly onDidChangeSelections = this._onDidChangeSelections.event;
+    private treeDataProvider: vscode.TreeDataProvider<SelectionItem | SelectionFileItem> | undefined;
+
+    constructor(private context: vscode.ExtensionContext) {
+        this.treeDataProvider = this.getSavedSelectionsProvider();
+    }
+
+    saveSelection(name: string, files: string[]): void {
+        const selections = this.getAllSelections();
+        selections.push({
+            name,
+            files,
+            isActive: false
+        });
+        this.context.globalState.update('selections', selections);
+        this._onDidChangeSelections.fire();
+    }
+
+    getSavedSelectionsProvider(): vscode.TreeDataProvider<SelectionItem | SelectionFileItem> {
+        return {
+            getTreeItem: (element: SelectionItem | SelectionFileItem) => element,
+            onDidChangeTreeData: this._onDidChangeSelections.event,
+
+            getChildren: (element?: SelectionItem): (SelectionItem | SelectionFileItem)[] => {
+                if (!element) {
+                    return this.getAllSelections().map(selection =>
+                        new SelectionItem(selection)
+                    );
+                }
+                return element.selection.files.map(file =>
+                    new SelectionFileItem(file)
+                );
+            }
+        };
+    }
+    refresh(): void {
+        this._onDidChangeSelections.fire();
+    }
+
+    updateSelection(name: string, files: string[]): void {
+        const selections = this.getAllSelections();
+        const index = selections.findIndex(s => s.name === name);
+        if (index !== -1) {
+            selections[index].files = files;
+            this.context.globalState.update('selections', selections);
+            this._onDidChangeSelections.fire();
+        }
+    }
+
+    getAllSelections(): StoredSelection[] {
+        return this.context.globalState.get<StoredSelection[]>('selections', []);
+    }
+
+    getActiveSelections(): StoredSelection[] {
+        return this.getAllSelections().filter(s => s.isActive);
+    }
+
+    toggleSelectionActive(name: string): void {
+        const selections = this.getAllSelections();
+        const selection = selections.find(s => s.name === name);
+        if (selection) {
+            selection.isActive = !selection.isActive;
+            this.context.globalState.update('selections', selections);
+            this._onDidChangeSelections.fire();
+        }
+    }
+
+    deleteSelection(name: string): void {
+        const selections = this.getAllSelections();
+        const updatedSelections = selections.filter(s => s.name !== name);
+        this.context.globalState.update('selections', updatedSelections);
+        this._onDidChangeSelections.fire();
+    }
+
+
+
+    getActiveSelectionsProvider(): vscode.TreeDataProvider<vscode.TreeItem> {
+        return {
+            getTreeItem: (element: vscode.TreeItem) => element,
+            getChildren: () => {
+                return this.getActiveSelections().map(selection => {
+                    const item = new vscode.TreeItem(selection.name);
+                    item.contextValue = 'activeSelection';
+                    item.tooltip = `Files: ${selection.files.length}`;
+                    item.iconPath = new vscode.ThemeIcon('eye');
+                    return item;
+                });
+            }
+        };
+    }
+}
+
+--------------------------------------------------
+
+Ruta al script: src\test\extension.test.ts
+Nombre del script: extension.test.ts
+Contenido del script:
+import * as assert from 'assert';
+
+// You can import and use all API from the 'vscode' module
+// as well as import your extension to test it
+import * as vscode from 'vscode';
+// import * as myExtension from '../../extension';
+
+suite('Extension Test Suite', () => {
+	vscode.window.showInformationMessage('Start all tests.');
+
+	test('Sample test', () => {
+		assert.strictEqual(-1, [1, 2, 3].indexOf(5));
+		assert.strictEqual(-1, [1, 2, 3].indexOf(0));
+	});
+});
+
+
+--------------------------------------------------
+
+Ruta al script: src\extension.ts
+Nombre del script: extension.ts
+Contenido del script:
+import * as vscode from 'vscode';
+import { FileExplorerProvider, FileTreeItem } from './providers/FileExplorerProvider';
+import { SelectionStorage, StoredSelection, SelectionItem } from './storage/SelectionStorage';
+import { FileManager } from './managers/FileManager';
+
+export function activate(context: vscode.ExtensionContext) {
+    const storage = new SelectionStorage(context);
+    const fileManager = new FileManager();
+    const fileExplorerProvider = new FileExplorerProvider();
+
+    // Registrar proveedores de vista
+    const treeView = vscode.window.createTreeView('newSelection', {
+        treeDataProvider: fileExplorerProvider,
+        showCollapseAll: true,
+        canSelectMany: true
+    });
+
+    // Registrar el proveedor para selecciones guardadas
+    const savedSelectionsProvider = storage.getSavedSelectionsProvider();
+    vscode.window.registerTreeDataProvider('savedSelections', savedSelectionsProvider);
+
+    // Registrar el proveedor para selecciones activas
+    vscode.window.registerTreeDataProvider(
+        'activeSelections',
+        storage.getActiveSelectionsProvider()
+    );
+
+    // Registrar comandos
+    context.subscriptions.push(
+        vscode.commands.registerCommand('fileMerger.refresh', () => {
+            fileExplorerProvider.refresh();
+            // Forzar actualización de la vista de selecciones guardadas
+            storage.refresh();
+        }),
+
+        vscode.commands.registerCommand('fileMerger.toggleSelection', async (item: FileTreeItem) => {
+            await fileExplorerProvider.toggleSelection(item);
+        }),
+
+        vscode.commands.registerCommand('fileMerger.saveSelection', async () => {
+            const name = await vscode.window.showInputBox({
+                prompt: 'Enter a name for this selection'
+            });
+            if (name) {
+                const selectedFiles = fileExplorerProvider.getSelectedFiles();
+                if (selectedFiles.length > 0) {
+                    storage.saveSelection(name, selectedFiles);
+                    vscode.window.showInformationMessage(`Selection "${name}" saved successfully`);
+                } else {
+                    vscode.window.showWarningMessage('No files selected to save');
+                }
+            }
+        }),
+
+        vscode.commands.registerCommand('fileMerger.mergeFiles', () => {
+            const selectedFiles = fileExplorerProvider.getSelectedFiles();
+            if (selectedFiles.length > 0) {
+                fileManager.mergeFiles(selectedFiles);
+            } else {
+                vscode.window.showWarningMessage('No files selected to merge');
+            }
+        }),
+
+        vscode.commands.registerCommand('fileMerger.generateMergeFromSaved', (item: SelectionItem) => {
+            if (item && item.selection && item.selection.files.length > 0) {
+                fileManager.mergeFiles(item.selection.files);
+            } else {
+                vscode.window.showWarningMessage('No files in this selection');
+            }
+        }),
+
+        vscode.commands.registerCommand('fileMerger.deleteSelection', async (item: SelectionItem) => {
+            if (item && item.selection) {
+                const answer = await vscode.window.showWarningMessage(
+                    `Are you sure you want to delete "${item.selection.name}"?`,
+                    'Yes',
+                    'No'
+                );
+                if (answer === 'Yes') {
+                    storage.deleteSelection(item.selection.name);
+                    vscode.window.showInformationMessage(`Selection "${item.selection.name}" deleted`);
+                }
+            }
+        }),
+
+        vscode.commands.registerCommand('fileMerger.editSelection', async (item: SelectionItem) => {
+            if (item && item.selection) {
+                // Limpiar selección actual
+                fileExplorerProvider.refresh();
+
+                // Pre-seleccionar los archivos de la selección guardada
+                for (const file of item.selection.files) {
+                    const uri = vscode.Uri.file(file);
+                    const fileItem = new FileTreeItem(
+                        uri,
+                        vscode.FileType.File,
+                        true
+                    );
+                    await fileExplorerProvider.toggleSelection(fileItem);
+                }
+
+                // Cambiar a la vista de nueva selección
+                await vscode.commands.executeCommand('workbench.view.extension.file-merger-explorer');
+                await vscode.commands.executeCommand('newSelection.focus');
+
+                // Mostrar mensaje informativo
+                vscode.window.showInformationMessage(
+                    `Editing "${item.selection.name}". Make your changes and save as a new selection.`
+                );
+            }
+        }),
+
+        vscode.commands.registerCommand('fileMerger.toggleActive', (item: SelectionItem) => {
+            if (item && item.selection) {
+                storage.toggleSelectionActive(item.selection.name);
+                if (item.selection.isActive) {
+                    const outputPath = item.selection.name + '_merged.txt';
+                    fileManager.startWatching(item.selection.files, outputPath);
+                    vscode.window.showInformationMessage(`Selection "${item.selection.name}" is now active`);
+                } else {
+                    fileManager.stopWatching(item.selection.files);
+                    vscode.window.showInformationMessage(`Selection "${item.selection.name}" is now inactive`);
+                }
+            }
+        })
+    );
+
+    // Manejar eventos de checkbox
+    treeView.onDidChangeCheckboxState(async (e) => {
+        for (const [item] of e.items) {
+            await fileExplorerProvider.toggleSelection(item as FileTreeItem);
+        }
+    });
+
+    // Suscribirse a cambios en las selecciones
+    storage.onDidChangeSelections(() => {
+        // vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
+    });
+}
+
+export function deactivate() {
+    // Limpiar recursos al desactivar la extensión
+}
+
+--------------------------------------------------
+
+Ruta al script: package.json
+Nombre del script: package.json
+Contenido del script:
+{
+    "name": "file-merger",
+    "displayName": "File Merger",
+    "description": "Merge multiple files into a single script with custom format",
+    "version": "0.0.2-vscode-1.89.0",
+    "engines": {
+        "vscode": "^1.89.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "main": "./dist/extension.js",
+    "icon": "resources/arrow.png",
+    "contributes": {
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "file-merger-explorer",
+                    "title": "File Merger",
+                    "icon": "resources/merger.svg"
+                }
+            ]
+        },
+        "views": {
+            "file-merger-explorer": [
+                {
+                    "id": "newSelection",
+                    "name": "New Selection",
+                    "icon": "resources/merger.svg",
+                    "contextualTitle": "New Selection"
+                },
+                {
+                    "id": "savedSelections",
+                    "name": "Saved Selections",
+                    "contextualTitle": "Saved Selections"
+                },
+                {
+                    "id": "activeSelections",
+                    "name": "Active Selections",
+                    "contextualTitle": "Active Selections"
+                }
+            ]
+        },
+        "commands": [
+            {
+                "command": "fileMerger.generateMergeFromSaved",
+                "title": "Generate Merge",
+                "icon": "$(git-merge)"
+            },
+            {
+                "command": "fileMerger.refresh",
+                "title": "Refresh",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "fileMerger.saveSelection",
+                "title": "Save Selection",
+                "icon": "$(save)"
+            },
+            {
+                "command": "fileMerger.mergeFiles",
+                "title": "Merge Files",
+                "icon": "$(merge)"
+            },
+            {
+                "command": "fileMerger.toggleSelection",
+                "title": "Toggle Selection"
+            },
+            {
+                "command": "fileMerger.editSelection",
+                "title": "Edit Selection",
+                "icon": "$(edit)"
+            },
+            {
+                "command": "fileMerger.deleteSelection",
+                "title": "Delete Selection",
+                "icon": "$(trash)"
+            },
+            {
+                "command": "fileMerger.toggleActive",
+                "title": "Toggle Active State",
+                "icon": "$(play)"
+            }
+        ],
+        "menus": {
+            "view/title": [
+                {
+                    "command": "fileMerger.refresh",
+                    "when": "view == savedSelections",
+                    "group": "navigation"
+                },
+                {
+                    "command": "fileMerger.refresh",
+                    "when": "view == newSelection",
+                    "group": "navigation"
+                },
+                {
+                    "command": "fileMerger.refresh",
+                    "when": "view == activeSelections",
+                    "group": "navigation"
+                },
+                {
+                    "command": "fileMerger.saveSelection",
+                    "when": "view == newSelection",
+                    "group": "navigation"
+                },
+                {
+                    "command": "fileMerger.mergeFiles",
+                    "when": "view == newSelection",
+                    "group": "navigation"
+                }
+            ],
+            "view/item/context": [
+                {
+                    "command": "fileMerger.toggleSelection",
+                    "when": "view == newSelection",
+                    "group": "inline"
+                },
+                {
+                    "command": "fileMerger.useSelection",
+                    "when": "view == savedSelections",
+                    "group": "inline"
+                },
+                {
+                    "command": "fileMerger.editSelection",
+                    "when": "view == savedSelections",
+                    "group": "inline"
+                },
+                {
+                    "command": "fileMerger.deleteSelection",
+                    "when": "view == savedSelections",
+                    "group": "inline"
+                },
+                {
+                    "command": "fileMerger.toggleActive",
+                    "when": "view == savedSelections && viewItem == savedSelection",
+                    "group": "inline"
+                },
+                {
+                    "command": "fileMerger.generateMergeFromSaved",
+                    "when": "view == savedSelections && viewItem == savedSelection",
+                    "group": "inline"
+                }
+            ]
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "node esbuild.js --production",
+        "watch": "node esbuild.js --watch",
+        "lint": "eslint src --ext ts"
+    },
+    "devDependencies": {
+        "@types/node": "^20.x",
+        "@types/vscode": "^1.89.0",
+        "@typescript-eslint/eslint-plugin": "^8.17.0",
+        "@typescript-eslint/parser": "^8.17.0",
+        "esbuild": "^0.24.2",
+        "eslint": "^9.16.0",
+        "typescript": "^5.7.2"
+    }
+}
+
+--------------------------------------------------
+
