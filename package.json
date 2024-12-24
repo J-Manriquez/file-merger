@@ -46,6 +46,11 @@
         },
         "commands": [
             {
+                "command": "fileMerger.generateMergeFromSaved",
+                "title": "Generate Merge",
+                "icon": "$(file)"
+            },
+            {
                 "command": "fileMerger.refresh",
                 "title": "Refresh",
                 "icon": "$(refresh)"
@@ -126,6 +131,11 @@
                 },
                 {
                     "command": "fileMerger.toggleActive",
+                    "when": "view == savedSelections",
+                    "group": "inline"
+                },
+                {
+                    "command": "fileMerger.generateMergeFromSaved",
                     "when": "view == savedSelections",
                     "group": "inline"
                 }

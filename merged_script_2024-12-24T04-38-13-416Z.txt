@@ -1,4 +1,4 @@
-Ruta al script: c:\Users\jorge\OneDrive\Documents\Proyectos_Personales\ExtensionesVSCode\file-merger\src\managers\FileManager.ts
+Ruta al script: src\managers\FileManager.ts
 Nombre del script: FileManager.ts
 Contenido del script:
 import * as vscode from 'vscode';
@@ -72,10 +72,18 @@ export class FileManager {
     }
 
     private async generateMergedContent(files: string[]): Promise<string> {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders) {
+            throw new Error('No workspace folder open');
+        }
+        const workspacePath = workspaceFolders[0].uri.fsPath;
+
         let content = '';
         for (const file of files) {
             const fileContent = await fs.promises.readFile(file, 'utf8');
-            content += `Ruta al script: ${file}\n`;
+            // Convertir a ruta relativa
+            const relativePath = path.relative(workspacePath, file);
+            content += `Ruta al script: ${relativePath}\n`;
             content += `Nombre del script: ${path.basename(file)}\n`;
             content += `Contenido del script:\n${fileContent}\n`;
             content += '\n--------------------------------------------------\n\n';
@@ -101,7 +109,7 @@ export class FileManager {
 
 --------------------------------------------------
 
-Ruta al script: c:\Users\jorge\OneDrive\Documents\Proyectos_Personales\ExtensionesVSCode\file-merger\src\providers\FileExplorerProvider.ts
+Ruta al script: src\providers\FileExplorerProvider.ts
 Nombre del script: FileExplorerProvider.ts
 Contenido del script:
 import * as vscode from 'vscode';
@@ -207,7 +215,7 @@ export class FileExplorerProvider implements vscode.TreeDataProvider<FileTreeIte
 
 --------------------------------------------------
 
-Ruta al script: c:\Users\jorge\OneDrive\Documents\Proyectos_Personales\ExtensionesVSCode\file-merger\src\providers\SelectionEventHandler.ts
+Ruta al script: src\providers\SelectionEventHandler.ts
 Nombre del script: SelectionEventHandler.ts
 Contenido del script:
 // src/providers/SelectionEventHandler.ts
@@ -234,7 +242,7 @@ export class SelectionEventHandler {
 
 --------------------------------------------------
 
-Ruta al script: c:\Users\jorge\OneDrive\Documents\Proyectos_Personales\ExtensionesVSCode\file-merger\src\providers\SelectionProvider.ts
+Ruta al script: src\providers\SelectionProvider.ts
 Nombre del script: SelectionProvider.ts
 Contenido del script:
 // src/providers/SelectionProvider.ts
@@ -330,15 +338,44 @@ export class SelectionProvider {
 
 --------------------------------------------------
 
-Ruta al script: c:\Users\jorge\OneDrive\Documents\Proyectos_Personales\ExtensionesVSCode\file-merger\src\storage\SelectionStorage.ts
+Ruta al script: src\storage\SelectionStorage.ts
 Nombre del script: SelectionStorage.ts
 Contenido del script:
+import path = require('path');
 import * as vscode from 'vscode';
 
 export interface StoredSelection {
     name: string;
     files: string[];
     isActive: boolean;
+}
+
+// Nueva clase para representar los archivos en el árbol
+class SelectionFileItem extends vscode.TreeItem {
+    constructor(public readonly filePath: string) {
+        super(path.basename(filePath));
+        this.tooltip = filePath;
+        this.contextValue = 'selectionFile';
+        this.iconPath = new vscode.ThemeIcon('file');
+    }
+}
+
+// Nueva clase para representar las selecciones en el árbol
+class SelectionItem extends vscode.TreeItem {
+    constructor(
+        public readonly selection: StoredSelection
+    ) {
+        super(
+            selection.name,
+            vscode.TreeItemCollapsibleState.Collapsed
+        );
+        this.contextValue = 'savedSelection';
+        this.tooltip = `Files: ${selection.files.length}`;
+        this.description = selection.isActive ? '(Active)' : '';
+        this.iconPath = selection.isActive ?
+            new vscode.ThemeIcon('eye') :
+            new vscode.ThemeIcon('eye-closed');
+    }
 }
 
 export class SelectionStorage {
@@ -393,18 +430,36 @@ export class SelectionStorage {
         this._onDidChangeSelections.fire();
     }
 
-    getSavedSelectionsProvider(): vscode.TreeDataProvider<vscode.TreeItem> {
+    getSavedSelectionsProvider(): vscode.TreeDataProvider<SelectionItem | SelectionFileItem> {
         return {
-            getTreeItem: (element: vscode.TreeItem) => element,
-            getChildren: () => {
-                return this.getAllSelections().map(selection => {
-                    const item = new vscode.TreeItem(selection.name);
-                    item.contextValue = 'savedSelection';
-                    item.tooltip = `Files: ${selection.files.length}`;
-                    item.description = selection.isActive ? '(Active)' : '';
-                    item.iconPath = selection.isActive ? new vscode.ThemeIcon('eye') : new vscode.ThemeIcon('eye-closed');
-                    return item;
-                });
+            getTreeItem: (element: SelectionItem | SelectionFileItem) => element,
+
+            getChildren: (element?: SelectionItem): (SelectionItem | SelectionFileItem)[] => {
+                if (!element) {
+                    // Nivel raíz: mostrar todas las selecciones
+                    return this.getAllSelections().map(selection =>
+                        new SelectionItem(selection)
+                    );
+                } else {
+                    // Nivel hijo: mostrar los archivos de la selección
+                    return element.selection.files.map(file =>
+                        new SelectionFileItem(file)
+                    );
+                }
+            },
+
+            getParent: (element: SelectionItem | SelectionFileItem) => {
+                if (element instanceof SelectionFileItem) {
+                    // Buscar la selección padre
+                    const selections = this.getAllSelections();
+                    const parentSelection = selections.find(s =>
+                        s.files.includes(element.filePath)
+                    );
+                    return parentSelection ?
+                        new SelectionItem(parentSelection) :
+                        null;
+                }
+                return null;
             }
         };
     }
@@ -427,7 +482,7 @@ export class SelectionStorage {
 
 --------------------------------------------------
 
-Ruta al script: c:\Users\jorge\OneDrive\Documents\Proyectos_Personales\ExtensionesVSCode\file-merger\src\test\extension.test.ts
+Ruta al script: src\test\extension.test.ts
 Nombre del script: extension.test.ts
 Contenido del script:
 import * as assert from 'assert';
@@ -449,7 +504,7 @@ suite('Extension Test Suite', () => {
 
 --------------------------------------------------
 
-Ruta al script: c:\Users\jorge\OneDrive\Documents\Proyectos_Personales\ExtensionesVSCode\file-merger\src\extension.ts
+Ruta al script: src\extension.ts
 Nombre del script: extension.ts
 Contenido del script:
 import * as vscode from 'vscode';
@@ -520,15 +575,44 @@ export function activate(context: vscode.ExtensionContext) {
         }),
 
         vscode.commands.registerCommand('fileMerger.editSelection', async (selection: StoredSelection) => {
-            const files = await vscode.window.showOpenDialog({
-                canSelectMany: true,
-                canSelectFolders: false
+            // Crear una nueva vista temporal para selección
+            const tempProvider = new FileExplorerProvider();
+            const tempTreeView = vscode.window.createTreeView('tempSelection', {
+                treeDataProvider: tempProvider,
+                showCollapseAll: true,
+                canSelectMany: true
             });
 
-            if (files) {
-                const newFiles = files.map(f => f.fsPath);
+            // Pre-seleccionar los archivos existentes
+            selection.files.forEach(file => {
+                tempProvider.toggleSelection(new FileTreeItem(
+                    vscode.Uri.file(file),
+                    vscode.FileType.File,
+                    true
+                ));
+            });
+
+            // Mostrar diálogo de confirmación
+            const result = await vscode.window.showInformationMessage(
+                'Select files and click Save when done',
+                'Save',
+                'Cancel'
+            );
+
+            if (result === 'Save') {
+                const newFiles = tempProvider.getSelectedFiles();
                 storage.updateSelection(selection.name, newFiles);
                 vscode.window.showInformationMessage(`Selection "${selection.name}" updated`);
+            }
+
+            tempTreeView.dispose();
+        }),
+
+        vscode.commands.registerCommand('fileMerger.generateMergeFromSaved', (selection: StoredSelection) => {
+            if (selection.files.length > 0) {
+                fileManager.mergeFiles(selection.files);
+            } else {
+                vscode.window.showWarningMessage('No files in this selection');
             }
         }),
 
@@ -562,7 +646,7 @@ export function deactivate() {
 
 --------------------------------------------------
 
-Ruta al script: c:\Users\jorge\OneDrive\Documents\Proyectos_Personales\ExtensionesVSCode\file-merger\package.json
+Ruta al script: package.json
 Nombre del script: package.json
 Contenido del script:
 {
@@ -612,6 +696,11 @@ Contenido del script:
             ]
         },
         "commands": [
+            {
+                "command": "fileMerger.generateMergeFromSaved",
+                "title": "Generate Merge",
+                "icon": "$(file)"
+            },
             {
                 "command": "fileMerger.refresh",
                 "title": "Refresh",
@@ -693,6 +782,11 @@ Contenido del script:
                 },
                 {
                     "command": "fileMerger.toggleActive",
+                    "when": "view == savedSelections",
+                    "group": "inline"
+                },
+                {
+                    "command": "fileMerger.generateMergeFromSaved",
                     "when": "view == savedSelections",
                     "group": "inline"
                 }

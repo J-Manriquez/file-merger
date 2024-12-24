@@ -1,9 +1,38 @@
+import path = require('path');
 import * as vscode from 'vscode';
 
 export interface StoredSelection {
     name: string;
     files: string[];
     isActive: boolean;
+}
+
+// Nueva clase para representar los archivos en el árbol
+class SelectionFileItem extends vscode.TreeItem {
+    constructor(public readonly filePath: string) {
+        super(path.basename(filePath));
+        this.tooltip = filePath;
+        this.contextValue = 'selectionFile';
+        this.iconPath = new vscode.ThemeIcon('file');
+    }
+}
+
+// Nueva clase para representar las selecciones en el árbol
+class SelectionItem extends vscode.TreeItem {
+    constructor(
+        public readonly selection: StoredSelection
+    ) {
+        super(
+            selection.name,
+            vscode.TreeItemCollapsibleState.Collapsed
+        );
+        this.contextValue = 'savedSelection';
+        this.tooltip = `Files: ${selection.files.length}`;
+        this.description = selection.isActive ? '(Active)' : '';
+        this.iconPath = selection.isActive ?
+            new vscode.ThemeIcon('eye') :
+            new vscode.ThemeIcon('eye-closed');
+    }
 }
 
 export class SelectionStorage {
@@ -58,18 +87,36 @@ export class SelectionStorage {
         this._onDidChangeSelections.fire();
     }
 
-    getSavedSelectionsProvider(): vscode.TreeDataProvider<vscode.TreeItem> {
+    getSavedSelectionsProvider(): vscode.TreeDataProvider<SelectionItem | SelectionFileItem> {
         return {
-            getTreeItem: (element: vscode.TreeItem) => element,
-            getChildren: () => {
-                return this.getAllSelections().map(selection => {
-                    const item = new vscode.TreeItem(selection.name);
-                    item.contextValue = 'savedSelection';
-                    item.tooltip = `Files: ${selection.files.length}`;
-                    item.description = selection.isActive ? '(Active)' : '';
-                    item.iconPath = selection.isActive ? new vscode.ThemeIcon('eye') : new vscode.ThemeIcon('eye-closed');
-                    return item;
-                });
+            getTreeItem: (element: SelectionItem | SelectionFileItem) => element,
+
+            getChildren: (element?: SelectionItem): (SelectionItem | SelectionFileItem)[] => {
+                if (!element) {
+                    // Nivel raíz: mostrar todas las selecciones
+                    return this.getAllSelections().map(selection =>
+                        new SelectionItem(selection)
+                    );
+                } else {
+                    // Nivel hijo: mostrar los archivos de la selección
+                    return element.selection.files.map(file =>
+                        new SelectionFileItem(file)
+                    );
+                }
+            },
+
+            getParent: (element: SelectionItem | SelectionFileItem) => {
+                if (element instanceof SelectionFileItem) {
+                    // Buscar la selección padre
+                    const selections = this.getAllSelections();
+                    const parentSelection = selections.find(s =>
+                        s.files.includes(element.filePath)
+                    );
+                    return parentSelection ?
+                        new SelectionItem(parentSelection) :
+                        null;
+                }
+                return null;
             }
         };
     }

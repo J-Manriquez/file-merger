@@ -69,10 +69,18 @@ export class FileManager {
     }
 
     private async generateMergedContent(files: string[]): Promise<string> {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders) {
+            throw new Error('No workspace folder open');
+        }
+        const workspacePath = workspaceFolders[0].uri.fsPath;
+
         let content = '';
         for (const file of files) {
             const fileContent = await fs.promises.readFile(file, 'utf8');
-            content += `Ruta al script: ${file}\n`;
+            // Convertir a ruta relativa
+            const relativePath = path.relative(workspacePath, file);
+            content += `Ruta al script: ${relativePath}\n`;
             content += `Nombre del script: ${path.basename(file)}\n`;
             content += `Contenido del script:\n${fileContent}\n`;
             content += '\n--------------------------------------------------\n\n';
