@@ -1,9 +1,8 @@
 {
     "name": "file-merger",
-    "displayName": "file-merger",
+    "displayName": "File Merger",
     "description": "Merge multiple files into a single script with custom format",
     "version": "0.0.1",
-    "license": "MIT",
     "engines": {
         "vscode": "^1.96.0"
     },
@@ -11,49 +10,127 @@
         "Other"
     ],
     "activationEvents": [
-        "onView:fileMergerExplorer"
+        "onStartupFinished"
     ],
     "main": "./dist/extension.js",
+    "icon": "resources/arrow.png",
     "contributes": {
         "viewsContainers": {
             "activitybar": [
                 {
-                    "id": "file-merger",
+                    "id": "file-merger-explorer",
                     "title": "File Merger",
                     "icon": "resources/merger.svg"
                 }
             ]
         },
         "views": {
-            "file-merger": [
+            "file-merger-explorer": [
+                {
+                    "id": "newSelection",
+                    "name": "New Selection",
+                    "icon": "resources/merger.svg",
+                    "contextualTitle": "New Selection"
+                },
                 {
                     "id": "savedSelections",
-                    "name": "Saved Selections"
+                    "name": "Saved Selections",
+                    "contextualTitle": "Saved Selections"
                 },
                 {
                     "id": "activeSelections",
-                    "name": "Active Selections"
-                },
-                {
-                    "id": "newSelection",
-                    "name": "New Selection"
+                    "name": "Active Selections",
+                    "contextualTitle": "Active Selections"
                 }
             ]
         },
         "commands": [
             {
-                "command": "fileMerger.newSelection",
-                "title": "Create New Selection"
+                "command": "fileMerger.refresh",
+                "title": "Refresh",
+                "icon": "$(refresh)"
             },
             {
                 "command": "fileMerger.saveSelection",
-                "title": "Save Current Selection"
+                "title": "Save Selection",
+                "icon": "$(save)"
             },
             {
                 "command": "fileMerger.mergeFiles",
-                "title": "Merge Selected Files"
+                "title": "Merge Files",
+                "icon": "$(merge)"
+            },
+            {
+                "command": "fileMerger.toggleSelection",
+                "title": "Toggle Selection"
+            },
+            {
+                "command": "fileMerger.useSelection",
+                "title": "Use Selection",
+                "icon": "$(play)"
+            },
+            {
+                "command": "fileMerger.editSelection",
+                "title": "Edit Selection",
+                "icon": "$(edit)"
+            },
+            {
+                "command": "fileMerger.deleteSelection",
+                "title": "Delete Selection",
+                "icon": "$(trash)"
+            },
+            {
+                "command": "fileMerger.toggleActive",
+                "title": "Toggle Active State",
+                "icon": "$(eye)"
             }
-        ]
+        ],
+        "menus": {
+            "view/title": [
+                {
+                    "command": "fileMerger.refresh",
+                    "when": "view == newSelection",
+                    "group": "navigation"
+                },
+                {
+                    "command": "fileMerger.saveSelection",
+                    "when": "view == newSelection",
+                    "group": "navigation"
+                },
+                {
+                    "command": "fileMerger.mergeFiles",
+                    "when": "view == newSelection",
+                    "group": "navigation"
+                }
+            ],
+            "view/item/context": [
+                {
+                    "command": "fileMerger.toggleSelection",
+                    "when": "view == newSelection",
+                    "group": "inline"
+                },
+                {
+                    "command": "fileMerger.useSelection",
+                    "when": "view == savedSelections",
+                    "group": "inline"
+                },
+                {
+                    "command": "fileMerger.editSelection",
+                    "when": "view == savedSelections",
+                    "group": "inline"
+                },
+                {
+                    "command": "fileMerger.deleteSelection",
+                    "when": "view == savedSelections",
+                    "group": "inline"
+                },
+                {
+                    "command": "fileMerger.toggleActive",
+                    "when": "view == savedSelections",
+                    "group": "inline"
+                }
+            ]
+        }
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",
@@ -62,16 +139,12 @@
         "lint": "eslint src --ext ts"
     },
     "devDependencies": {
-        "@types/mocha": "^10.0.10",
-        "@types/node": "20.x",
+        "@types/node": "^20.x",
         "@types/vscode": "^1.96.0",
         "@typescript-eslint/eslint-plugin": "^8.17.0",
         "@typescript-eslint/parser": "^8.17.0",
-        "@vscode/test-cli": "^0.0.10",
-        "@vscode/test-electron": "^2.4.1",
         "esbuild": "^0.24.2",
         "eslint": "^9.16.0",
-        "npm-run-all": "^4.1.5",
         "typescript": "^5.7.2"
     }
 }

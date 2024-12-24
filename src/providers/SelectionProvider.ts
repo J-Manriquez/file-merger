@@ -52,6 +52,10 @@ export class SelectionProvider {
         };
     }
 
+    updateCurrentSelection(files: string[]): void {
+        this.currentSelection = files;
+    }
+
     async createNewSelection(): Promise<void> {
         const files = await vscode.window.showOpenDialog({
             canSelectMany: true,
